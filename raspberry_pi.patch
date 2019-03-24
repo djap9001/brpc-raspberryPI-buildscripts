@@ -1,0 +1,255 @@
+diff --git a/Makefile b/Makefile
+index 21e3081..1934d44 100644
+--- a/Makefile
++++ b/Makefile
+@@ -22,10 +22,6 @@ ifeq ($(SYSTEM),Darwin)
+     TARGET_LIB_DY = libbrpc.dylib
+ endif
+ 
+-#required by butil/crc32.cc to boost performance for 10x
+-ifeq ($(shell test $(GCC_VERSION) -ge 40400; echo $$?),0)
+-	CXXFLAGS+=-msse4 -msse4.2
+-endif
+ #not solved yet
+ ifeq ($(CC),gcc)
+  ifeq ($(shell test $(GCC_VERSION) -ge 70000; echo $$?),0)
+diff --git a/src/bthread/mutex.cpp b/src/bthread/mutex.cpp
+index 0de00b2..5640b0e 100644
+--- a/src/bthread/mutex.cpp
++++ b/src/bthread/mutex.cpp
+@@ -81,7 +81,7 @@ struct SampledContention : public bvar::Collected {
+     }
+ };
+ 
+-BAIDU_CASSERT(sizeof(SampledContention) == 256, be_friendly_to_allocator);
++//BAIDU_CASSERT(sizeof(SampledContention) == 256, be_friendly_to_allocator);
+ 
+ // Functor to compare contentions.
+ struct ContentionEqual {
+diff --git a/src/bthread/processor.h b/src/bthread/processor.h
+index 001e95c..d8900fa 100644
+--- a/src/bthread/processor.h
++++ b/src/bthread/processor.h
+@@ -21,7 +21,7 @@
+ 
+ // Pause instruction to prevent excess processor bus usage, only works in GCC
+ # ifndef cpu_relax
+-# define cpu_relax() asm volatile("pause\n": : :"memory")
++# define cpu_relax() asm volatile("nop\n": : :"memory")
+ # endif
+ 
+ // Compile read-write barrier
+diff --git a/src/butil/binary_printer.cpp b/src/butil/binary_printer.cpp
+index 58fa11e..2d978c9 100644
+--- a/src/butil/binary_printer.cpp
++++ b/src/butil/binary_printer.cpp
+@@ -103,7 +103,7 @@ static void PrintIOBuf(Appender* appender, const IOBuf& b, size_t max_length) {
+             if (nw >= max_length) {
+                 printer.Flush();
+                 char buf[48];
+-                int len = snprintf(buf, sizeof(buf), "...<skipping %" PRIu64 " bytes>",
++                int len = snprintf(buf, sizeof(buf), "...<skipping %u bytes>",
+                          b.size() - nw);
+                 appender->Append(buf, len);
+                 return;
+@@ -121,7 +121,7 @@ static void PrintString(Appender* appender, const StringPiece& s, size_t max_len
+         if (i >= max_length) {
+             printer.Flush();
+             char buf[48];
+-            int len = snprintf(buf, sizeof(buf), "...<skipping %" PRIu64 " bytes>",
++            int len = snprintf(buf, sizeof(buf), "...<skipping %u bytes>",
+                                s.size() - i);
+             appender->Append(buf, len);
+             return;
+diff --git a/src/butil/containers/case_ignored_flat_map.cpp b/src/butil/containers/case_ignored_flat_map.cpp
+index b4c1469..5467fdb 100644
+--- a/src/butil/containers/case_ignored_flat_map.cpp
++++ b/src/butil/containers/case_ignored_flat_map.cpp
+@@ -17,7 +17,7 @@
+ 
+ namespace butil {
+ 
+-static const char g_tolower_map_base[] = {
++static const signed char g_tolower_map_base[] = {
+     -128, -127, -126, -125, -124, -123, -122, -121, -120,
+     -119, -118, -117, -116, -115, -114, -113, -112, -111, -110,
+     -109, -108, -107, -106, -105, -104, -103, -102, -101, -100,
+@@ -46,6 +46,6 @@ static const char g_tolower_map_base[] = {
+     120, 121, 122, 123, 124, 125, 126, 127
+ };
+ 
+-extern const char* const g_tolower_map = g_tolower_map_base + 128;
++extern const signed char* const g_tolower_map = g_tolower_map_base + 128;
+ 
+ } // namespace butil
+diff --git a/src/butil/files/file_posix.cc b/src/butil/files/file_posix.cc
+index 558d092..3563390 100644
+--- a/src/butil/files/file_posix.cc
++++ b/src/butil/files/file_posix.cc
+@@ -278,15 +278,9 @@ int64_t File::Seek(Whence whence, int64_t offset) {
+   butil::ThreadRestrictions::AssertIOAllowed();
+   DCHECK(IsValid());
+ 
+-#if defined(OS_ANDROID)
+   COMPILE_ASSERT(sizeof(int64_t) == sizeof(off64_t), off64_t_64_bit);
+   return lseek64(file_.get(), static_cast<off64_t>(offset),
+                  static_cast<int>(whence));
+-#else
+-  COMPILE_ASSERT(sizeof(int64_t) == sizeof(off_t), off_t_64_bit);
+-  return lseek(file_.get(), static_cast<off_t>(offset),
+-               static_cast<int>(whence));
+-#endif
+ }
+ 
+ int File::Read(int64_t offset, char* data, int size) {
+diff --git a/src/butil/iobuf.cpp b/src/butil/iobuf.cpp
+index 2219ff8..af05023 100644
+--- a/src/butil/iobuf.cpp
++++ b/src/butil/iobuf.cpp
+@@ -283,7 +283,7 @@ uint32_t block_size(IOBuf::Block const* b) {
+ }
+ 
+ inline IOBuf::Block* create_block(const size_t block_size) {
+-    if (block_size > 0xFFFFFFFFULL) {
++    if (block_size > 0x0FFFFFFF) {
+         LOG(FATAL) << "block_size=" << block_size << " is too large";
+         return NULL;
+     }
+diff --git a/src/butil/logging.h b/src/butil/logging.h
+index 998ee95..fc3d423 100644
+--- a/src/butil/logging.h
++++ b/src/butil/logging.h
+@@ -1160,7 +1160,7 @@ inline std::ostream& operator<<(std::ostream& out, const std::wstring& wstr) {
+ 
+ // Helper macro included by all *_EVERY_SECOND macros.
+ #define BAIDU_LOG_IF_EVERY_SECOND_IMPL(logifmacro, severity, condition) \
+-    static ::butil::subtle::Atomic64 BAIDU_CONCAT(logeverys_, __LINE__) = 0; \
++    static ::butil::subtle::Atomic32 BAIDU_CONCAT(logeverys_, __LINE__) = 0; \
+     const int64_t BAIDU_CONCAT(logeverys_ts_, __LINE__) = ::butil::gettimeofday_us(); \
+     const int64_t BAIDU_CONCAT(logeverys_seen_, __LINE__) = BAIDU_CONCAT(logeverys_, __LINE__); \
+     logifmacro(severity, (condition) && BAIDU_CONCAT(logeverys_ts_, __LINE__) >= \
+diff --git a/src/butil/status.cpp b/src/butil/status.cpp
+index ef35e04..9ad93f8 100644
+--- a/src/butil/status.cpp
++++ b/src/butil/status.cpp
+@@ -38,7 +38,7 @@ int Status::set_errorv(int c, const char* fmt, va_list args) {
+     if (_state != NULL) {
+         state = _state;
+     } else {
+-        const size_t guess_size = std::max(strlen(fmt) * 2, 32UL);
++        const size_t guess_size = std::max(strlen(fmt) * 2, (size_t)32);
+         const size_t st_size = status_size(guess_size);
+         new_state = reinterpret_cast<State*>(malloc(st_size));
+         if (NULL == new_state) {
+diff --git a/src/butil/string_printf.cpp b/src/butil/string_printf.cpp
+index 69c9a3f..63764a2 100644
+--- a/src/butil/string_printf.cpp
++++ b/src/butil/string_printf.cpp
+@@ -71,7 +71,7 @@ std::string string_printf(const char* format, ...) {
+     // is a hueristic that doesn't affect correctness but attempts to be
+     // reasonably fast for the most common cases.
+     std::string ret;
+-    ret.reserve(std::max(32UL, strlen(format) * 2));
++    ret.reserve(std::max((size_t)32, strlen(format) * 2));
+ 
+     va_list ap;
+     va_start(ap, format);
+diff --git a/src/butil/third_party/snappy/snappy-internal.h b/src/butil/third_party/snappy/snappy-internal.h
+index b6831fe..3822a99 100644
+--- a/src/butil/third_party/snappy/snappy-internal.h
++++ b/src/butil/third_party/snappy/snappy-internal.h
+@@ -132,7 +132,7 @@ static inline int FindMatchLength(const char* s1,
+         matched += 4;
+     }
+     if (LittleEndian::IsLittleEndian() && s2 <= s2_limit - 4) {
+-        uint32 x = UNALIGNED_LOAD32(s2) ^ UNALIGNED_LOAD32(s1 + matched);
++        uint32_t x = UNALIGNED_LOAD32(s2) ^ UNALIGNED_LOAD32(s1 + matched);
+         int matching_bits = Bits::FindLSBSetNonZero(x);
+         matched += matching_bits >> 3;
+     } else {
+diff --git a/src/butil/third_party/snappy/snappy-stubs-internal.h b/src/butil/third_party/snappy/snappy-stubs-internal.h
+index bf5e93e..13c7e2e 100644
+--- a/src/butil/third_party/snappy/snappy-stubs-internal.h
++++ b/src/butil/third_party/snappy/snappy-stubs-internal.h
+@@ -120,7 +120,7 @@ inline uint64_tUNALIGNED_LOAD64(const void *p) {
+     return t;
+ }
+ 
+-inline void UNALIGNED_STORE64(void *p, uint64_tv) {
++inline void UNALIGNED_STORE64(void *p, uint64_t v) {
+     memcpy(p, &v, sizeof v);
+ }
+ 
+@@ -141,8 +141,8 @@ inline uint32_t UNALIGNED_LOAD32(const void *p) {
+     return t;
+ }
+ 
+-inline uint64_tUNALIGNED_LOAD64(const void *p) {
+-    uint64_tt;
++inline uint64_t UNALIGNED_LOAD64(const void *p) {
++    uint64_t t;
+     memcpy(&t, p, sizeof t);
+     return t;
+ }
+@@ -155,7 +155,7 @@ inline void UNALIGNED_STORE32(void *p, uint32_t v) {
+     memcpy(p, &v, sizeof v);
+ }
+ 
+-inline void UNALIGNED_STORE64(void *p, uint64_tv) {
++inline void UNALIGNED_STORE64(void *p, uint64_t v) {
+     memcpy(p, &v, sizeof v);
+ }
+ 
+diff --git a/src/bvar/detail/agent_group.h b/src/bvar/detail/agent_group.h
+index 3443a66..253352e 100644
+--- a/src/bvar/detail/agent_group.h
++++ b/src/bvar/detail/agent_group.h
+@@ -141,7 +141,7 @@ public:
+         const size_t block_id = (size_t)id / ELEMENTS_PER_BLOCK; 
+         if (block_id >= _s_tls_blocks->size()) {
+             // The 32ul avoid pointless small resizes.
+-            _s_tls_blocks->resize(std::max(block_id + 1, 32ul));
++            _s_tls_blocks->resize(std::max(block_id + 1, (size_t)32));
+         }
+         ThreadBlock* tb = (*_s_tls_blocks)[block_id];
+         if (tb == NULL) {
+diff --git a/src/bvar/detail/percentile.h b/src/bvar/detail/percentile.h
+index 524001c..26e7622 100644
+--- a/src/bvar/detail/percentile.h
++++ b/src/bvar/detail/percentile.h
+@@ -377,7 +377,7 @@ friend class AddLatency;
+                 // Each 
+                 const size_t b = invl.added_count();
+                 const size_t remain = std::min(
+-                        round_of_expectation(b * SAMPLE_SIZE, total),
++                        (size_t)round_of_expectation(b * SAMPLE_SIZE, total),
+                         (size_t)invl.sample_count());
+                 get_interval_at(i).merge_with_expectation(invl, remain);
+             }
+diff --git a/src/bvar/recorder.h b/src/bvar/recorder.h
+index 6ef63c5..49e9de9 100644
+--- a/src/bvar/recorder.h
++++ b/src/bvar/recorder.h
+@@ -85,8 +85,9 @@ public:
+     // | 20 bits (unsigned) | sign bit | 43 bits |
+     //       num                   sum
+     const static size_t SUM_BIT_WIDTH=44;
+-    const static uint64_t MAX_SUM_PER_THREAD = (1ul << SUM_BIT_WIDTH) - 1;
+-    const static uint64_t MAX_NUM_PER_THREAD = (1ul << (64ul - SUM_BIT_WIDTH)) - 1;
++    const static uint64_t ON_BIT=1;
++    const static uint64_t MAX_SUM_PER_THREAD = (ON_BIT << SUM_BIT_WIDTH) - 1;
++    const static uint64_t MAX_NUM_PER_THREAD = (ON_BIT << (64ul - SUM_BIT_WIDTH)) - 1;
+     BAIDU_CASSERT(SUM_BIT_WIDTH > 32 && SUM_BIT_WIDTH < 64, 
+                   SUM_BIT_WIDTH_must_be_between_33_and_63);
+ 
+@@ -189,8 +190,8 @@ private:
+     // Check out http://en.wikipedia.org/wiki/Signed_number_representations if
+     // you are confused
+     static int64_t _extend_sign_bit(const uint64_t sum) {
+-        return (((1ul << (64ul - SUM_BIT_WIDTH + 1)) - 1) 
+-               * ((1ul << (SUM_BIT_WIDTH - 1) & sum)))
++        return (((ON_BIT << (64ul - SUM_BIT_WIDTH + 1)) - 1) 
++               * ((ON_BIT << (SUM_BIT_WIDTH - 1) & sum)))
+                | (int64_t)sum;
+     }
+ 
