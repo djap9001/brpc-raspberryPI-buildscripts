@@ -11,7 +11,7 @@ The script will build / install dependencies required to build brpc framework, a
 - The script will install a few packages using apt-get and begins to build some other dependencies from source. The build phase will take 3 - 4 hours, so once the building starts, I'd recommend you go get a cup of coffee or use the time for something else (the script will notify you when it reaches this point).
 - The modifications I have made for the source are just to get it to build on Raspbian, I haven't reviewed all the warnings that are still left and I'm not taking any responsibility for any issues that may arise, feedback and suggestions for improvements on the modifications are wellcome though.
 
-# NOTE about building for older x84_64 CPU (to self and possibly anyone else encountering same issue)
+# NOTE about building for older x86_64 CPU (to self and possibly anyone else encountering same issue)
 While building the framework for x64_64 to run it on my laptop running Ubuntu 18.04, I encountered the issue that even though the framework and samples passed the build wihout issue, the examples cored with SIGILL after a few seconds. The reason could be that my laptop is from pre-stoneage era and doesn't support sse4 sse4.2 instructions so in case of similar issues remove the -msse4 and -msse4.2 flags from incubator-brpc/Makefile before running make:
 
 ```
